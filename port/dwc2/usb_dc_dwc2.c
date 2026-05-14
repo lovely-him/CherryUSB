@@ -373,18 +373,10 @@ static void dwc2_tx_fifo_empty_procecss(uint8_t busid, uint8_t ep_idx)
         if (len > g_dwc2_udc[busid].in_ep[ep_idx].ep_mps) {
             len = g_dwc2_udc[busid].in_ep[ep_idx].ep_mps;
         }
-        if (g_dwc2_udc[busid].in_ep[ep_idx].ep_type == USB_ENDPOINT_TYPE_ISOCHRONOUS) {
-            if ((USB_OTG_DEV->DSTS & (1U << 8)) == 0U) {
-                USB_OTG_INEP(ep_idx)->DIEPCTL &= ~USB_OTG_DIEPCTL_SD0PID_SEVNFRM;
-                USB_OTG_INEP(ep_idx)->DIEPCTL |= USB_OTG_DIEPCTL_SODDFRM;
-            } else {
-                USB_OTG_INEP(ep_idx)->DIEPCTL &= ~USB_OTG_DIEPCTL_SODDFRM;
-                USB_OTG_INEP(ep_idx)->DIEPCTL |= USB_OTG_DIEPCTL_SD0PID_SEVNFRM;
-            }
-            USB_OTG_INEP(ep_idx)->DIEPTSIZ &= ~(USB_OTG_DIEPTSIZ_MULCNT);
-            USB_OTG_INEP(ep_idx)->DIEPTSIZ |= (USB_OTG_DIEPTSIZ_MULCNT & (1U << 29));
-        }
-
+        /* Note: frame-bit (SODDFRM/SEVNFRM) and MULCNT are already set correctly
+         * in usbd_ep_start_write() before EPENA is asserted.  Re-writing them
+         * here per-packet would corrupt MULCNT for mult>1 ISO endpoints.
+         */
         dwc2_ep_write(busid, ep_idx, g_dwc2_udc[busid].in_ep[ep_idx].xfer_buf, len);
         g_dwc2_udc[busid].in_ep[ep_idx].xfer_buf += len;
         g_dwc2_udc[busid].in_ep[ep_idx].actual_xfer_len += len;
@@ -726,7 +718,7 @@ int usbd_ep_open(uint8_t busid, const struct usb_endpoint_descriptor *ep)
             fifo_size = (USB_OTG_GLB->DIEPTXF[ep_idx - 1U] >> 16);
         }
 
-        USB_ASSERT_MSG((fifo_size * 4) >= USB_GET_MAXPACKETSIZE(ep->wMaxPacketSize), "Ep addr %02x fifo overflow", ep->bEndpointAddress);
+        USB_ASSERT_MSG((fifo_size * 4) >= (USB_GET_MAXPACKETSIZE(ep->wMaxPacketSize) * (uint32_t)(USB_GET_MULT(ep->wMaxPacketSize) + 1)), "Ep addr %02x fifo overflow (mult=%u requires %u bytes)", ep->bEndpointAddress, USB_GET_MULT(ep->wMaxPacketSize) + 1, USB_GET_MAXPACKETSIZE(ep->wMaxPacketSize) * (USB_GET_MULT(ep->wMaxPacketSize) + 1));
 
         g_dwc2_udc[busid].in_ep[ep_idx].ep_mps = USB_GET_MAXPACKETSIZE(ep->wMaxPacketSize);
         g_dwc2_udc[busid].in_ep[ep_idx].ep_type = USB_GET_ENDPOINT_TYPE(ep->bmAttributes);
