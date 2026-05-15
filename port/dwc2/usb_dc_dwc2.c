@@ -926,8 +926,15 @@ int usbd_ep_start_write(uint8_t busid, const uint8_t ep, const uint8_t *data, ui
 
     if (g_dwc2_udc[busid].in_ep[ep_idx].ep_type == USB_ENDPOINT_TYPE_ISOCHRONOUS ||
         g_dwc2_udc[busid].in_ep[ep_idx].ep_type == USB_ENDPOINT_TYPE_INTERRUPT) {
+        /* Compute actual MULCNT from data_len: short last packets use fewer sub-transactions
+         * to avoid empty sub-tx that cause EPROTO(-71) on the host side. */
+        uint32_t ep_mps      = g_dwc2_udc[busid].in_ep[ep_idx].ep_mps;
+        uint32_t ep_mult_max = usbd_get_ep_mult(busid, ep) + 1U;
+        uint32_t mulcnt      = (data_len + ep_mps - 1U) / ep_mps;
+        if (mulcnt < 1U) mulcnt = 1U;
+        if (mulcnt > ep_mult_max) mulcnt = ep_mult_max;
         USB_OTG_INEP(ep_idx)->DIEPTSIZ &= ~(USB_OTG_DIEPTSIZ_MULCNT);
-        USB_OTG_INEP(ep_idx)->DIEPTSIZ |= (USB_OTG_DIEPTSIZ_MULCNT & ((usbd_get_ep_mult(busid, ep) + 1) << 29));
+        USB_OTG_INEP(ep_idx)->DIEPTSIZ |= (USB_OTG_DIEPTSIZ_MULCNT & (mulcnt << 29));
     }
 
     if (g_dwc2_udc[busid].user_params.device_dma_enable) {
