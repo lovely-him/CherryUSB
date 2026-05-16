@@ -1470,6 +1470,14 @@ static void dwc2_port_irq_handler(struct usbh_bus *bus)
         }
         hprt0_dup |= USB_OTG_HPRT_PCDET;
         g_dwc2_hcd[bus->hcd.hcd_id].port_csc = 1;
+        /* AIC8800M40 (SNPSID=0x4F54400A) vendor-specific: HCFG[16] must be
+         * set on device connect. Standard DWC2 HCFG[22:16] are reserved bits;
+         * this is an AIC8800-specific requirement. Without it, SETUP packets
+         * are silently dropped and enumeration never completes.
+         * See hal_hcd.c: USBx_HOST->HCFG = (1 << 16) on PCDET. */
+        if (g_dwc2_hcd[bus->hcd.hcd_id].hw_params.snpsid == 0x4F54400AU) {
+            USB_OTG_HOST->HCFG |= (1U << 16);
+        }
     }
 
     /* Check whether Port Enable Changed */
