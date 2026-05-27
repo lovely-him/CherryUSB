@@ -28,6 +28,7 @@ struct dwc2_chan {
     usb_osal_sem_t waitsem;
     struct usbh_urb *urb;
     uint32_t iso_frame_idx;
+    struct usbh_urb *iso_next; /* next ISO URB queued for zero-gap handoff */
 };
 
 struct dwc2_hcd {
@@ -483,6 +484,7 @@ static int dwc2_chan_alloc(struct usbh_bus *bus)
 
             g_dwc2_hcd[bus->hcd.hcd_id].chan_pool[chidx].do_ssplit = 0;
             g_dwc2_hcd[bus->hcd.hcd_id].chan_pool[chidx].do_csplit = 0;
+            g_dwc2_hcd[bus->hcd.hcd_id].chan_pool[chidx].iso_next = NULL;
             return chidx;
         }
     }
@@ -1011,6 +1013,29 @@ int usbh_submit_urb(struct usbh_urb *urb)
         }
     }
 
+    /* For ISO endpoints, check if the same endpoint already has an active channel.
+     * If so, queue this URB as iso_next for zero-gap handoff instead of allocating
+     * a new channel (which causes ODDFRM scheduling conflicts on DWC2). */
+    if (USB_GET_ENDPOINT_TYPE(urb->ep->bmAttributes) == USB_ENDPOINT_TYPE_ISOCHRONOUS) {
+        size_t iso_flags;
+        struct dwc2_hcd *hcd = &g_dwc2_hcd[bus->hcd.hcd_id];
+        iso_flags = usb_osal_enter_critical_section();
+        for (int i = 0; i < hcd->hw_params.host_channels; i++) {
+            struct dwc2_chan *c = &hcd->chan_pool[i];
+            if (c->inuse && c->urb &&
+                c->urb->ep == urb->ep &&
+                c->urb->hport == urb->hport &&
+                c->iso_next == NULL) {
+                c->iso_next = urb;
+                urb->hcpriv = c;
+                urb->errorcode = -USB_ERR_BUSY;
+                usb_osal_leave_critical_section(iso_flags);
+                return 0;
+            }
+        }
+        usb_osal_leave_critical_section(iso_flags);
+    }
+
     chidx = dwc2_chan_alloc(bus);
     if (chidx == -1) {
         return -USB_ERR_NOMEM;
@@ -1109,6 +1134,29 @@ int usbh_kill_urb(struct usbh_urb *urb)
 
     chan = (struct dwc2_chan *)urb->hcpriv;
 
+    /* Handle the case where this URB is queued as iso_next (not yet active on hardware) */
+    if (chan->iso_next == urb) {
+        chan->iso_next = NULL;
+        urb->hcpriv = NULL;
+        urb->errorcode = -USB_ERR_SHUTDOWN;
+        usb_osal_leave_critical_section(flags);
+        if (urb->complete) {
+            urb->complete(urb->arg, urb->errorcode);
+        }
+        return 0;
+    }
+
+    /* Cancel any queued next ISO URB before halting the channel */
+    if (chan->iso_next) {
+        struct usbh_urb *next_urb = chan->iso_next;
+        chan->iso_next = NULL;
+        next_urb->hcpriv = NULL;
+        next_urb->errorcode = -USB_ERR_SHUTDOWN;
+        if (next_urb->complete) {
+            next_urb->complete(next_urb->arg, next_urb->errorcode);
+        }
+    }
+
     dwc2_halt(bus, chan->chidx);
 
     urb->errorcode = -USB_ERR_SHUTDOWN;
@@ -1206,8 +1254,26 @@ static void dwc2_inchan_irq_handler(struct usbh_bus *bus, uint8_t ch_num)
                 if (chan->iso_frame_idx < urb->num_of_iso_packets) {
                     dwc2_iso_urb_init(bus, ch_num, urb, &urb->iso_packet[chan->iso_frame_idx]);
                 } else {
-                    urb->errorcode = 0;
-                    dwc2_urb_waitup(urb);
+                    struct usbh_urb *next_urb = chan->iso_next;
+                    chan->iso_next = NULL;
+                    if (next_urb) {
+                        /* Zero-gap handoff: reuse channel for next URB without a free/alloc
+                         * cycle, avoiding any microframe gap that would break ISO continuity. */
+                        next_urb->hcpriv = chan;
+                        next_urb->actual_length = 0;
+                        chan->urb = next_urb;
+                        chan->iso_frame_idx = 0;
+                        dwc2_iso_urb_init(bus, ch_num, next_urb, &next_urb->iso_packet[0]);
+                        /* Complete current URB callback; channel stays allocated for next_urb */
+                        urb->errorcode = 0;
+                        urb->hcpriv = NULL;
+                        if (urb->complete) {
+                            urb->complete(urb->arg, urb->actual_length);
+                        }
+                    } else {
+                        urb->errorcode = 0;
+                        dwc2_urb_waitup(urb);
+                    }
                 }
             } else {
                 if (chan->do_ssplit && urb->transfer_buffer_length > 0 && (count == USB_GET_MAXPACKETSIZE(urb->ep->wMaxPacketSize))) {

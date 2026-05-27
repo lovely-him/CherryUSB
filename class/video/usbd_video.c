@@ -561,7 +561,7 @@ static int usbd_video_stream_request_handler(uint8_t busid, struct usb_setup_pac
         case VIDEO_VS_PROBE_CONTROL:
             switch (setup->bRequest) {
                 case VIDEO_REQUEST_SET_CUR:
-                    //memcpy((uint8_t *)&g_usbd_video[busid].probe, *data, setup->wLength);
+                    memcpy((uint8_t *)&g_usbd_video[busid].probe, *data, setup->wLength);
                     break;
                 case VIDEO_REQUEST_GET_CUR:
                     memcpy(*data, (uint8_t *)&g_usbd_video[busid].probe, setup->wLength);
@@ -592,7 +592,7 @@ static int usbd_video_stream_request_handler(uint8_t busid, struct usb_setup_pac
         case VIDEO_VS_COMMIT_CONTROL:
             switch (setup->bRequest) {
                 case VIDEO_REQUEST_SET_CUR:
-                    //memcpy((uint8_t *)&g_usbd_video[busid].commit, *data, setup->wLength);
+                    memcpy((uint8_t *)&g_usbd_video[busid].commit, *data, setup->wLength);
                     break;
                 case VIDEO_REQUEST_GET_CUR:
                     memcpy(*data, (uint8_t *)&g_usbd_video[busid].commit, setup->wLength);
@@ -849,4 +849,10 @@ __WEAK void usbd_video_close(uint8_t busid, uint8_t intf)
 {
     (void)busid;
     (void)intf;
+}
+
+void usbd_video_get_commit(uint8_t busid, uint8_t *format_idx, uint8_t *frame_idx)
+{
+    if (format_idx) *format_idx = g_usbd_video[busid].commit.bFormatIndex;
+    if (frame_idx)  *frame_idx  = g_usbd_video[busid].commit.bFrameIndex;
 }

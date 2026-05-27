@@ -21,6 +21,8 @@ struct usbd_interface *usbd_video_init_intf(uint8_t busid, struct usbd_interface
 void usbd_video_open(uint8_t busid, uint8_t intf);
 void usbd_video_close(uint8_t busid, uint8_t intf);
 
+void usbd_video_get_commit(uint8_t busid, uint8_t *format_idx, uint8_t *frame_idx);
+
 bool usbd_video_stream_split_transfer(uint8_t busid, uint8_t ep);
 int usbd_video_stream_start_write(uint8_t busid, uint8_t ep, uint8_t *ep_buf, uint8_t *stream_buf, uint32_t stream_len, bool do_copy);
 
