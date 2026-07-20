@@ -27,7 +27,7 @@
 
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_video_buf[USB_ALIGN_UP(128, CONFIG_USB_ALIGN_SIZE)];
 
-static const char *format_type[] = { "uncompressed", "mjpeg", "h264" };
+static const char *format_type[] = { "uncompressed", "mjpeg", "h264", "h265" };
 
 static struct usbh_video g_video_class[CONFIG_USBHOST_MAX_VIDEO_CLASS];
 static uint32_t g_devinuse = 0;
@@ -462,10 +462,19 @@ static int usbh_video_ctrl_connect(struct usbh_hubport *hport, uint8_t intf)
                             USB_ASSERT(format_index <= CONFIG_USBHOST_VIDEO_MAX_FORMATS);
 
                             video_class->format[format_index - 1].num_of_frames = num_of_frames;
-                            /* Frame-Based: GUID identifies codec (H.264/H.265/VP8).
-                             * Treat all Frame-Based as H.264 for now; raw ISO payload
-                             * reception is codec-agnostic. */
-                            video_class->format[format_index - 1].format_type = USBH_VIDEO_FORMAT_H264;
+                            /* Frame-Based: identify codec by first 4 bytes of GUID
+                             * (FourCC: 'H264', 'HEVC', 'VP80'). */
+                            {
+                                const uint8_t *guid = p + 5;  /* guidFormat at offset 5 */
+                                if ((guid[0] == 0x48 && guid[1] == 0x32 && guid[2] == 0x36 && guid[3] == 0x35) ||   /* "H265" */
+                                    (guid[0] == 0x48 && guid[1] == 0x45 && guid[2] == 0x56 && guid[3] == 0x43)) {   /* "HEVC" */
+                                    video_class->format[format_index - 1].format_type = USBH_VIDEO_FORMAT_H265;
+                                } else {
+                                    /* Default to H.264 for all other Frame-Based (H264/VP8/etc.)
+                                     * Raw ISO payload reception is codec-agnostic. */
+                                    video_class->format[format_index - 1].format_type = USBH_VIDEO_FORMAT_H264;
+                                }
+                            }
                             break;
                         case VIDEO_VS_FRAME_UNCOMPRESSED_DESCRIPTOR_SUBTYPE:
                             frame_index = p[DESC_bFrameIndex];
