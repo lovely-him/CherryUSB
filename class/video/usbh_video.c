@@ -27,7 +27,7 @@
 
 USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t g_video_buf[USB_ALIGN_UP(128, CONFIG_USB_ALIGN_SIZE)];
 
-static const char *format_type[] = { "uncompressed", "mjpeg" };
+static const char *format_type[] = { "uncompressed", "mjpeg", "h264" };
 
 static struct usbh_video g_video_class[CONFIG_USBHOST_MAX_VIDEO_CLASS];
 static uint32_t g_devinuse = 0;
@@ -454,6 +454,19 @@ static int usbh_video_ctrl_connect(struct usbh_hubport *hport, uint8_t intf)
                             video_class->format[format_index - 1].num_of_frames = num_of_frames;
                             video_class->format[format_index - 1].format_type = USBH_VIDEO_FORMAT_MJPEG;
                             break;
+                        case VIDEO_VS_FORMAT_FRAME_BASED_DESCRIPTOR_SUBTYPE:
+                            format_index = p[DESC_bFormatIndex];
+                            num_of_frames = p[DESC_bNumFrameDescriptors];
+
+                            USB_ASSERT(format_index != 0);
+                            USB_ASSERT(format_index <= CONFIG_USBHOST_VIDEO_MAX_FORMATS);
+
+                            video_class->format[format_index - 1].num_of_frames = num_of_frames;
+                            /* Frame-Based: GUID identifies codec (H.264/H.265/VP8).
+                             * Treat all Frame-Based as H.264 for now; raw ISO payload
+                             * reception is codec-agnostic. */
+                            video_class->format[format_index - 1].format_type = USBH_VIDEO_FORMAT_H264;
+                            break;
                         case VIDEO_VS_FRAME_UNCOMPRESSED_DESCRIPTOR_SUBTYPE:
                             frame_index = p[DESC_bFrameIndex];
 
@@ -477,6 +490,22 @@ static int usbh_video_ctrl_connect(struct usbh_hubport *hport, uint8_t intf)
                             video_class->format[format_index - 1].frame[frame_index - 1].wWidth = ((struct video_cs_if_vs_frame_mjpeg_descriptor *)p)->wWidth;
                             video_class->format[format_index - 1].frame[frame_index - 1].wHeight = ((struct video_cs_if_vs_frame_mjpeg_descriptor *)p)->wHeight;
                             video_class->format[format_index - 1].frame[frame_index - 1].dwDefaultFrameInterval = ((struct video_cs_if_vs_frame_mjpeg_descriptor *)p)->dwDefaultFrameInterval;
+                            break;
+                        case VIDEO_VS_FRAME_FRAME_BASED_DESCRIPTOR_SUBTYPE:
+                            frame_index = p[DESC_bFrameIndex];
+
+                            USB_ASSERT(format_index != 0);
+                            USB_ASSERT(frame_index != 0);
+                            USB_ASSERT(format_index <= CONFIG_USBHOST_VIDEO_MAX_FORMATS);
+                            USB_ASSERT(frame_index <= CONFIG_USBHOST_VIDEO_MAX_FRAMES);
+
+                            /* Frame-Based frame descriptor differs from MJPEG:
+                             * it has no dwMaxVideoFrameBufferSize, and adds
+                             * dwBytesPerLine after bFrameIntervalType.
+                             * Use the correct struct for field offsets. */
+                            video_class->format[format_index - 1].frame[frame_index - 1].wWidth = ((struct video_cs_if_vs_frame_h26x_descriptor *)p)->wWidth;
+                            video_class->format[format_index - 1].frame[frame_index - 1].wHeight = ((struct video_cs_if_vs_frame_h26x_descriptor *)p)->wHeight;
+                            video_class->format[format_index - 1].frame[frame_index - 1].dwDefaultFrameInterval = ((struct video_cs_if_vs_frame_h26x_descriptor *)p)->dwDefaultFrameInterval;
                             break;
                         default:
                             break;
