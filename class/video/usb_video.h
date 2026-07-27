@@ -1005,6 +1005,7 @@ struct video_cs_if_vs_format_h26x_descriptor {
 } __PACKED;
 
 #define VIDEO_SIZEOF_VS_FORMAT_H264_DESC 28
+#define VIDEO_SIZEOF_VS_FORMAT_H265_DESC 28
 
 /* H264 Payload - 3.1.2. H264 Video Frame Descriptor */
 struct video_cs_if_vs_frame_h26x_descriptor {
@@ -1346,6 +1347,22 @@ struct video_autoexposure_mode {
     bFormatIndex,         /* bFormatIndex : First (and only) format descriptor */                    \
     bNumFrameDescriptors, /* bNumFrameDescriptors : One frame descriptor for this format follows. */ \
     VIDEO_GUID_H264,                                                                                 \
+    0x00,                 /* bmFlags : Uses fixed size samples.. */                                  \
+    0x01,                 /* bDefaultFrameIndex : Default frame index is 1. */                       \
+    0x00,                 /* bAspectRatioX : Non-interlaced stream,  not required. */                \
+    0x00,                 /* bAspectRatioY : Non-interlaced stream,  not required. */                \
+    0x00,                 /* bmInterlaceFlags : Non-interlaced stream */                             \
+    0x00,                 /* bCopyProtect : No restrictions imposed on the duplication of this video stream. */ \
+    0x00                  /* Variable size: False */
+
+#define VIDEO_VS_FORMAT_H265_DESCRIPTOR_INIT(bFormatIndex, bNumFrameDescriptors)                     \
+    /*Payload Format(H.265) Descriptor */                                                            \
+    0x1c,                 /* bLength */                                                              \
+    0x24,                 /* bDescriptorType : CS_INTERFACE */                                       \
+    VIDEO_VS_FORMAT_FRAME_BASED_DESCRIPTOR_SUBTYPE,  /* bDescriptorSubType : VS_FORMAT_FRAME_BASED subtype */\
+    bFormatIndex,         /* bFormatIndex : First (and only) format descriptor */                    \
+    bNumFrameDescriptors, /* bNumFrameDescriptors : One frame descriptor for this format follows. */ \
+    VIDEO_GUID_H265,                                                                                 \
     0x00,                 /* bmFlags : Uses fixed size samples.. */                                  \
     0x01,                 /* bDefaultFrameIndex : Default frame index is 1. */                       \
     0x00,                 /* bAspectRatioX : Non-interlaced stream,  not required. */                \
